@@ -1,0 +1,864 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="initial-scale=1,user-scalable=no,maximum-scale=1,width=device-width">
+        <meta name="mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <link rel="stylesheet" href="css/leaflet.css">
+        <link rel="stylesheet" href="css/L.Control.Layers.Tree.css">
+        <link rel="stylesheet" href="css/qgis2web.css">
+        <link rel="stylesheet" href="css/fontawesome-all.min.css">
+        <link rel="stylesheet" href="css/filter.css">
+<link rel="stylesheet" href="css/nouislider.min.css">
+        <link rel="stylesheet" href="css/leaflet.photon.css">
+        <style>
+        html, body, #map {
+            width: 100%;
+            height: 100%;
+            padding: 0;
+            margin: 0;
+        }
+        </style>
+        <title>El Raurell</title>
+    </head>
+    <body>
+        <div id="map">
+        </div>
+        <script src="js/qgis2web_expressions.js"></script>
+        <script src="js/leaflet.js"></script>
+        <script src="js/L.Control.Layers.Tree.min.js"></script>
+        <script src="js/leaflet.rotatedMarker.js"></script>
+        <script src="js/leaflet.pattern.js"></script>
+        <script src="js/leaflet-hash.js"></script>
+        <script src="js/Autolinker.min.js"></script>
+        <script src="js/rbush.min.js"></script>
+        <script src="js/labelgun.min.js"></script>
+        <script src="js/labels.js"></script>
+        <script src="js/leaflet.photon.js"></script>
+        <script src="js/tailDT.js"></script>
+<script src="js/nouislider.min.js"></script>
+<script src="js/wNumb.js"></script>
+        <script src="data/Lmits_2.js"></script>
+        <script src="data/Observacions_3.js"></script>
+        <script>
+        var highlightLayer;
+        function highlightFeature(e) {
+            highlightLayer = e.target;
+
+            if (e.target.feature.geometry.type === 'LineString' || e.target.feature.geometry.type === 'MultiLineString') {
+              highlightLayer.setStyle({
+                color: 'rgba(255, 255, 0, 1.00)',
+              });
+            } else {
+              highlightLayer.setStyle({
+                fillColor: 'rgba(255, 255, 0, 1.00)',
+                fillOpacity: 1
+              });
+            }
+            highlightLayer.openPopup();
+        }
+        var map = L.map('map', {
+            zoomControl:false, maxZoom:28, minZoom:1
+        }).fitBounds([[41.93366695355277,2.2723211090617896],[41.947160524020745,2.307084816305891]]);
+        var hash = new L.Hash(map);
+        map.attributionControl.setPrefix('<a href="https://github.com/tomchadwin/qgis2web" target="_blank">qgis2web</a> &middot; <a href="https://leafletjs.com" title="A JS library for interactive maps">Leaflet</a> &middot; <a href="https://qgis.org">QGIS</a>');
+        var autolinker = new Autolinker({truncate: {length: 30, location: 'smart'}});
+        // remove popup's row if "visible-with-data"
+        function removeEmptyRowsFromPopupContent(content, feature) {
+         var tempDiv = document.createElement('div');
+         tempDiv.innerHTML = content;
+         var rows = tempDiv.querySelectorAll('tr');
+         for (var i = 0; i < rows.length; i++) {
+             var td = rows[i].querySelector('td.visible-with-data');
+             var key = td ? td.id : '';
+             if (td && td.classList.contains('visible-with-data') && feature.properties[key] == null) {
+                 rows[i].parentNode.removeChild(rows[i]);
+             }
+         }
+         return tempDiv.innerHTML;
+        }
+        // modify popup if contains media
+        function addClassToPopupIfMedia(content, popup) {
+            var tempDiv = document.createElement('div');
+            tempDiv.innerHTML = content;
+            var imgTd = tempDiv.querySelector('td img');
+            if (imgTd) {
+                var src = imgTd.getAttribute('src');
+                if (/\.(jpg|jpeg|png|gif|bmp|webp|avif)$/i.test(src)) {
+                    popup._contentNode.classList.add('media');
+                    setTimeout(function() {
+                        popup.update();
+                    }, 10);
+                } else if (/\.(mp3|wav|ogg|aac)$/i.test(src)) {
+                    var audio = document.createElement('audio');
+                    audio.controls = true;
+                    audio.src = src;
+                    imgTd.parentNode.replaceChild(audio, imgTd);
+                    popup._contentNode.classList.add('media');
+                    setTimeout(function() {
+                        popup.setContent(tempDiv.innerHTML);
+                        popup.update();
+                    }, 10);
+                } else if (/\.(mp4|webm|ogg|mov)$/i.test(src)) {
+                    var video = document.createElement('video');
+                    video.controls = true;
+                    video.src = src;
+                    video.style.width = "400px";
+                    video.style.height = "300px";
+                    video.style.maxHeight = "60vh";
+                    video.style.maxWidth = "60vw";
+                    imgTd.parentNode.replaceChild(video, imgTd);
+                    popup._contentNode.classList.add('media');
+                    // Aggiorna il popup quando il video carica i metadati
+                    video.addEventListener('loadedmetadata', function() {
+                        popup.update();
+                    });
+                    setTimeout(function() {
+                        popup.setContent(tempDiv.innerHTML);
+                        popup.update();
+                    }, 10);
+                } else {
+                    popup._contentNode.classList.remove('media');
+                }
+            } else {
+                popup._contentNode.classList.remove('media');
+            }
+        }
+        var title = new L.Control({'position':'topleft'});
+        title.onAdd = function (map) {
+            this._div = L.DomUtil.create('div', 'info');
+            this.update();
+            return this._div;
+        };
+        title.update = function () {
+            this._div.innerHTML = '<h2>Vall de Rials</h2>';
+        };
+        title.addTo(map);
+        var zoomControl = L.control.zoom({
+            position: 'topleft'
+        }).addTo(map);
+        var bounds_group = new L.featureGroup([]);
+        function setBounds() {
+        }
+        map.createPane('pane_OSMStandard_0');
+        map.getPane('pane_OSMStandard_0').style.zIndex = 400;
+        var layer_OSMStandard_0 = L.tileLayer('http://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            pane: 'pane_OSMStandard_0',
+            opacity: 1.0,
+            attribution: '<a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors, CC-BY-SA</a>',
+            minZoom: 1,
+            maxZoom: 28,
+            minNativeZoom: 0,
+            maxNativeZoom: 19
+        });
+        layer_OSMStandard_0;
+        map.addLayer(layer_OSMStandard_0);
+        map.createPane('pane_MapboxSatellite_1');
+        map.getPane('pane_MapboxSatellite_1').style.zIndex = 401;
+        var layer_MapboxSatellite_1 = L.tileLayer('https://api.mapbox.com/v4/mapbox.satellite/{z}/{x}/{y}.webp?sku=101ifSAcKcVFs&access_token=pk.eyJ1IjoidW5mb2xkZWRpbmMiLCJhIjoiY2s5ZG90MjMzMDV6eDNkbnh2cDJvbHl4NyJ9.BT2LAvHi31vNNEplsgxucQ', {
+            pane: 'pane_MapboxSatellite_1',
+            opacity: 1.0,
+            attribution: '<a href="https://www.maxar.com/">© Maxar</a>',
+            minZoom: 1,
+            maxZoom: 28,
+            minNativeZoom: 0,
+            maxNativeZoom: 19
+        });
+        layer_MapboxSatellite_1;
+        map.addLayer(layer_MapboxSatellite_1);
+        function pop_Lmits_2(feature, layer) {
+            layer.on({
+                mouseout: function(e) {
+                    for (var i in e.target._eventParents) {
+                        if (typeof e.target._eventParents[i].resetStyle === 'function') {
+                            e.target._eventParents[i].resetStyle(e.target);
+                        }
+                    }
+                    if (typeof layer.closePopup == 'function') {
+                        layer.closePopup();
+                    } else {
+                        layer.eachLayer(function(feature){
+                            feature.closePopup()
+                        });
+                    }
+                },
+                mouseover: highlightFeature,
+            });
+            var popupContent = '<table>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['id'] !== null ? autolinker.link(String(feature.properties['id']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Nom'] !== null ? autolinker.link(String(feature.properties['Nom']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_Lmits_2_0() {
+            return {
+                pane: 'pane_Lmits_2',
+                opacity: 1,
+                color: 'rgba(31,120,180,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 4.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(31,120,180,0.06274509803921569)',
+                interactive: false,
+            }
+        }
+        map.createPane('pane_Lmits_2');
+        map.getPane('pane_Lmits_2').style.zIndex = 402;
+        map.getPane('pane_Lmits_2').style['mix-blend-mode'] = 'normal';
+        var layer_Lmits_2 = new L.geoJson(json_Lmits_2, {
+            attribution: '',
+            interactive: false,
+            dataVar: 'json_Lmits_2',
+            layerName: 'layer_Lmits_2',
+            pane: 'pane_Lmits_2',
+            onEachFeature: pop_Lmits_2,
+            style: style_Lmits_2_0,
+        });
+        bounds_group.addLayer(layer_Lmits_2);
+        map.addLayer(layer_Lmits_2);
+        function pop_Observacions_3(feature, layer) {
+            layer.on({
+                mouseout: function(e) {
+                    for (var i in e.target._eventParents) {
+                        if (typeof e.target._eventParents[i].resetStyle === 'function') {
+                            e.target._eventParents[i].resetStyle(e.target);
+                        }
+                    }
+                    if (typeof layer.closePopup == 'function') {
+                        layer.closePopup();
+                    } else {
+                        layer.eachLayer(function(feature){
+                            feature.closePopup()
+                        });
+                    }
+                },
+                mouseover: highlightFeature,
+            });
+            var popupContent = '<table>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Data'] !== null ? autolinker.link(String(feature.properties['Data']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Horari'] !== null ? autolinker.link(String(feature.properties['Horari']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Espècie_num'] !== null ? autolinker.link(String(feature.properties['Espècie_num']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Link'] !== null ? autolinker.link(String(feature.properties['Link']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_Observacions_3_0(feature) {
+            switch(String(feature.properties['Tipus de dada'])) {
+                case 'Precisa':
+                    return {
+                pane: 'pane_Observacions_3',
+                radius: 10.0,
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(51,160,44,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'Aproximada':
+                    return {
+                pane: 'pane_Observacions_3',
+                radius: 10.0,
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(251,247,21,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'Hotspot':
+                    return {
+                pane: 'pane_Observacions_3',
+                radius: 10.0,
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(175,175,175,1.0)',
+                interactive: true,
+            }
+                    break;
+            }
+        }
+        map.createPane('pane_Observacions_3');
+        map.getPane('pane_Observacions_3').style.zIndex = 403;
+        map.getPane('pane_Observacions_3').style['mix-blend-mode'] = 'normal';
+        var layer_Observacions_3 = new L.geoJson(json_Observacions_3, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_Observacions_3',
+            layerName: 'layer_Observacions_3',
+            pane: 'pane_Observacions_3',
+            onEachFeature: pop_Observacions_3,
+            pointToLayer: function (feature, latlng) {
+                var context = {
+                    feature: feature,
+                    variables: {}
+                };
+                return L.circleMarker(latlng, style_Observacions_3_0(feature));
+            },
+        });
+        bounds_group.addLayer(layer_Observacions_3);
+        map.addLayer(layer_Observacions_3);
+        var overlaysTree = [
+            {label: 'Observacions<br /><table><tr><td style="text-align: center;"><img src="legend/Observacions_3_Precisa0.png" /></td><td>Precisa</td></tr><tr><td style="text-align: center;"><img src="legend/Observacions_3_Aproximada1.png" /></td><td>Aproximada</td></tr><tr><td style="text-align: center;"><img src="legend/Observacions_3_Hotspot2.png" /></td><td>Hotspot</td></tr></table>', layer: layer_Observacions_3},
+            {label: '<img src="legend/Lmits_2.png" /> Límits', layer: layer_Lmits_2},
+            {label: "Mapbox - Satellite", layer: layer_MapboxSatellite_1},
+            {label: "OSM Standard", layer: layer_OSMStandard_0},]
+        var lay = L.control.layers.tree(null, overlaysTree,{
+            //namedToggle: true,
+            //selectorBack: false,
+            //closedSymbol: '&#8862; &#x1f5c0;',
+            //openedSymbol: '&#8863; &#x1f5c1;',
+            //collapseAll: 'Collapse all',
+            //expandAll: 'Expand all',
+            collapsed: false, 
+        });
+        lay.addTo(map);
+		document.addEventListener("DOMContentLoaded", function() {
+            // set new Layers List height which considers toggle icon
+            function newLayersListHeight() {
+                var layerScrollbarElement = document.querySelector('.leaflet-control-layers-scrollbar');
+                if (layerScrollbarElement) {
+                    var layersListElement = document.querySelector('.leaflet-control-layers-list');
+                    var originalHeight = layersListElement.style.height 
+                        || window.getComputedStyle(layersListElement).height;
+                    var newHeight = parseFloat(originalHeight) - 50;
+                    layersListElement.style.height = newHeight + 'px';
+                }
+            }
+            var isLayersListExpanded = true;
+            var controlLayersElement = document.querySelector('.leaflet-control-layers');
+            var toggleLayerControl = document.querySelector('.leaflet-control-layers-toggle');
+            // toggle Collapsed/Expanded and apply new Layers List height
+            toggleLayerControl.addEventListener('click', function() {
+                if (isLayersListExpanded) {
+                    controlLayersElement.classList.remove('leaflet-control-layers-expanded');
+                } else {
+                    controlLayersElement.classList.add('leaflet-control-layers-expanded');
+                }
+                isLayersListExpanded = !isLayersListExpanded;
+                newLayersListHeight()
+            });	
+			// apply new Layers List height if toggle layerstree
+			if (controlLayersElement) {
+				controlLayersElement.addEventListener('click', function(event) {
+					var toggleLayerHeaderPointer = event.target.closest('.leaflet-layerstree-header-pointer span');
+					if (toggleLayerHeaderPointer) {
+						newLayersListHeight();
+					}
+				});
+			}
+            // Collapsed/Expanded at Start to apply new height
+            setTimeout(function() {
+                toggleLayerControl.click();
+            }, 10);
+            setTimeout(function() {
+                toggleLayerControl.click();
+            }, 10);
+            // Collapsed touch/small screen
+            var isSmallScreen = window.innerWidth < 650;
+            if (isSmallScreen) {
+                setTimeout(function() {
+                    controlLayersElement.classList.remove('leaflet-control-layers-expanded');
+                    isLayersListExpanded = !isLayersListExpanded;
+                }, 500);
+            }  
+        });       
+        setBounds();
+        var mapDiv = document.getElementById('map');
+        var row = document.createElement('div');
+        row.className="row";
+        row.id="all";
+        row.style.height = "100%";
+        var col1 = document.createElement('div');
+        col1.className="col9";
+        col1.id = "mapWindow";
+        col1.style.height = "99%";
+        col1.style.width = "80%";
+        col1.style.display = "inline-block";
+        var col2 = document.createElement('div');
+        col2.className="col3";
+        col2.id = "menu";
+        col2.style.display = "inline-block";
+        mapDiv.parentNode.insertBefore(row, mapDiv);
+        document.getElementById("all").appendChild(col1);
+        document.getElementById("all").appendChild(col2);
+        col1.appendChild(mapDiv)
+        var Filters = {"Any": "int","Mes": "int","Espècie": "str","Tipus de dada": "str"};
+        function filterFunc() {
+          map.eachLayer(function(lyr){
+          if ("options" in lyr && "dataVar" in lyr["options"]){
+            features = this[lyr["options"]["dataVar"]].features.slice(0);
+            try{
+              for (key in Filters){
+                keyS = key.replace(/[^a-zA-Z0-9_]/g, "")
+                if (Filters[key] == "str" || Filters[key] == "bool"){
+                  var selection = [];
+                  var options = document.getElementById("sel_" + keyS).options
+                  for (var i=0; i < options.length; i++) {
+                    if (options[i].selected) selection.push(options[i].value);
+                  }
+                    try{
+                      if (key in features[0].properties){
+                        for (i = features.length - 1;
+                          i >= 0; --i){
+                          if (selection.indexOf(
+                          features[i].properties[key])<0
+                          && selection.length>0) {
+                          features.splice(i,1);
+                          }
+                        }
+                      }
+                    } catch(err){
+                  }
+                }
+                if (Filters[key] == "int"){
+                  sliderVals =  document.getElementById(
+                    "div_" + keyS).noUiSlider.get();
+                  try{
+                    if (key in features[0].properties){
+                    for (i = features.length - 1; i >= 0; --i){
+                      if (parseInt(features[i].properties[key])
+                          < sliderVals[0]
+                          || parseInt(features[i].properties[key])
+                          > sliderVals[1]){
+                            features.splice(i,1);
+                          }
+                        }
+                      }
+                    } catch(err){
+                    }
+                  }
+                if (Filters[key] == "real"){
+                  sliderVals =  document.getElementById(
+                    "div_" + keyS).noUiSlider.get();
+                  try{
+                    if (key in features[0].properties){
+                    for (i = features.length - 1; i >= 0; --i){
+                      if (features[i].properties[key]
+                          < sliderVals[0]
+                          || features[i].properties[key]
+                          > sliderVals[1]){
+                            features.splice(i,1);
+                          }
+                        }
+                      }
+                    } catch(err){
+                    }
+                  }
+                if (Filters[key] == "date"
+                  || Filters[key] == "datetime"
+                  || Filters[key] == "time"){
+                  try{
+                    if (key in features[0].properties){
+                      HTMLkey = key.replace(/[&\/\\#,+()$~%.'":*?<>{} ]/g, '');
+                      startdate = document.getElementById("dat_" +
+                        HTMLkey + "_date1").value.replace(" ", "T");
+                      enddate = document.getElementById("dat_" +
+                        HTMLkey + "_date2").value.replace(" ", "T");
+                      for (i = features.length - 1; i >= 0; --i){
+                        if (features[i].properties[key] < startdate
+                          || features[i].properties[key] > enddate){
+                          features.splice(i,1);
+                        }
+                      }
+                    }
+                  } catch(err){
+                  }
+                }
+              }
+            } catch(err){
+            }
+          this[lyr["options"]["layerName"]].clearLayers();
+          this[lyr["options"]["layerName"]].addData(features);
+          }
+          })
+        }
+            document.getElementById("menu").appendChild(
+                document.createElement("div"));
+            var div_Any = document.createElement("div");
+            div_Any.id = "div_Any";
+            div_Any.className = "slider";
+            document.getElementById("menu").appendChild(div_Any);
+            var lab_Any = document.createElement('div');
+            lab_Any.innerHTML  = 'Any: <span id="val_Any"></span>';
+            lab_Any.className = 'filterlabel';
+            document.getElementById("menu").appendChild(lab_Any);
+            var reset_Any = document.createElement('div');
+            reset_Any.innerHTML = 'Neteja filtre';
+            reset_Any.className = 'filterlabel';
+            lab_Any.className = 'filterlabel';
+            reset_Any.onclick = function() {
+                sel_Any.noUiSlider.reset();
+            };
+            document.getElementById("menu").appendChild(reset_Any);
+            var sel_Any = document.getElementById('div_Any');
+            noUiSlider.create(sel_Any, {
+                connect: true,
+                start: [1985, 2026],
+                step: 1,
+                format: wNumb({
+                    decimals: 0,
+                    }),
+                range: {
+                min: 1985,
+                max: 2026
+                }
+            });
+            sel_Any.noUiSlider.on('update', function (values) {
+            filterVals =[];
+            for (value in values){
+            filterVals.push(parseInt(value))
+            }
+            val_Any = document.getElementById('val_Any');
+            val_Any.innerHTML = values.join(' - ');
+                filterFunc()
+            });
+            document.getElementById("menu").appendChild(
+                document.createElement("div"));
+            var div_Mes = document.createElement("div");
+            div_Mes.id = "div_Mes";
+            div_Mes.className = "slider";
+            document.getElementById("menu").appendChild(div_Mes);
+            var lab_Mes = document.createElement('div');
+            lab_Mes.innerHTML  = 'Mes: <span id="val_Mes"></span>';
+            lab_Mes.className = 'filterlabel';
+            document.getElementById("menu").appendChild(lab_Mes);
+            var reset_Mes = document.createElement('div');
+            reset_Mes.innerHTML = 'Neteja filtre';
+            reset_Mes.className = 'filterlabel';
+            lab_Mes.className = 'filterlabel';
+            reset_Mes.onclick = function() {
+                sel_Mes.noUiSlider.reset();
+            };
+            document.getElementById("menu").appendChild(reset_Mes);
+            var sel_Mes = document.getElementById('div_Mes');
+            noUiSlider.create(sel_Mes, {
+                connect: true,
+                start: [1, 12],
+                step: 1,
+                format: wNumb({
+                    decimals: 0,
+                    }),
+                range: {
+                min: 1,
+                max: 12
+                }
+            });
+            sel_Mes.noUiSlider.on('update', function (values) {
+            filterVals =[];
+            for (value in values){
+            filterVals.push(parseInt(value))
+            }
+            val_Mes = document.getElementById('val_Mes');
+            val_Mes.innerHTML = values.join(' - ');
+                filterFunc()
+            });
+            document.getElementById("menu").appendChild(
+                document.createElement("div"));
+            var div_Espcie = document.createElement('div');
+            div_Espcie.id = "div_Espcie";
+            div_Espcie.className= "filterselect";
+            document.getElementById("menu").appendChild(div_Espcie);
+            sel_Espcie = document.createElement('select');
+            sel_Espcie.multiple = true;
+            sel_Espcie.size = 10;
+            sel_Espcie.id = "sel_Espcie";
+            var Espcie_options_str = "<option value='' unselected></option>";
+            sel_Espcie.onchange = function(){filterFunc()};
+            Espcie_options_str  += '<option value="Abellerol">Abellerol</option>';
+            Espcie_options_str  += '<option value="Agró blanc">Agró blanc</option>';
+            Espcie_options_str  += '<option value="Agró roig">Agró roig</option>';
+            Espcie_options_str  += '<option value="Aligot comú">Aligot comú</option>';
+            Espcie_options_str  += '<option value="Aligot vesper">Aligot vesper</option>';
+            Espcie_options_str  += '<option value="Aligot vesper / comú">Aligot vesper / comú</option>';
+            Espcie_options_str  += '<option value="Alosa vulgar">Alosa vulgar</option>';
+            Espcie_options_str  += '<option value="Anthus no identificat">Anthus no identificat</option>';
+            Espcie_options_str  += '<option value="Arpella pàl·lida">Arpella pàl·lida</option>';
+            Espcie_options_str  += '<option value="Arpella pàl·lida russa">Arpella pàl·lida russa</option>';
+            Espcie_options_str  += '<option value="Arpella vulgar">Arpella vulgar</option>';
+            Espcie_options_str  += '<option value="Astor">Astor</option>';
+            Espcie_options_str  += '<option value="Astor / Esparver vulgar">Astor / Esparver vulgar</option>';
+            Espcie_options_str  += '<option value="Aufrany">Aufrany</option>';
+            Espcie_options_str  += '<option value="Ballester">Ballester</option>';
+            Espcie_options_str  += '<option value="Balquer">Balquer</option>';
+            Espcie_options_str  += '<option value="Batallaire">Batallaire</option>';
+            Espcie_options_str  += '<option value="Bec d&apos;alena">Bec d&apos;alena</option>';
+            Espcie_options_str  += '<option value="Becadell comú">Becadell comú</option>';
+            Espcie_options_str  += '<option value="Becadell gros">Becadell gros</option>';
+            Espcie_options_str  += '<option value="Becadell no identificat">Becadell no identificat</option>';
+            Espcie_options_str  += '<option value="Becadell sord">Becadell sord</option>';
+            Espcie_options_str  += '<option value="Bernat pescaire">Bernat pescaire</option>';
+            Espcie_options_str  += '<option value="Bitxac comú">Bitxac comú</option>';
+            Espcie_options_str  += '<option value="Bitxac rogenc">Bitxac rogenc</option>';
+            Espcie_options_str  += '<option value="Blauet">Blauet</option>';
+            Espcie_options_str  += '<option value="Boscaler comú">Boscaler comú</option>';
+            Espcie_options_str  += '<option value="Boscaler pintat gros">Boscaler pintat gros</option>';
+            Espcie_options_str  += '<option value="Boscarla d&apos;aigua">Boscarla d&apos;aigua</option>';
+            Espcie_options_str  += '<option value="Boscarla de canyar">Boscarla de canyar</option>';
+            Espcie_options_str  += '<option value="Boscarla dels joncs">Boscarla dels joncs</option>';
+            Espcie_options_str  += '<option value="Bosqueta vulgar">Bosqueta vulgar</option>';
+            Espcie_options_str  += '<option value="Botxí meridional">Botxí meridional</option>';
+            Espcie_options_str  += '<option value="Bruel">Bruel</option>';
+            Espcie_options_str  += '<option value="Cabusset">Cabusset</option>';
+            Espcie_options_str  += '<option value="Cabussó collnegre">Cabussó collnegre</option>';
+            Espcie_options_str  += '<option value="Cadernera">Cadernera</option>';
+            Espcie_options_str  += '<option value="Cames llargues">Cames llargues</option>';
+            Espcie_options_str  += '<option value="Capsigrany">Capsigrany</option>';
+            Espcie_options_str  += '<option value="Capó reial">Capó reial</option>';
+            Espcie_options_str  += '<option value="Cargolet">Cargolet</option>';
+            Espcie_options_str  += '<option value="Cigonya blanca">Cigonya blanca</option>';
+            Espcie_options_str  += '<option value="Circus no identificat">Circus no identificat</option>';
+            Espcie_options_str  += '<option value="Cogullada vulgar">Cogullada vulgar</option>';
+            Espcie_options_str  += '<option value="Colltort">Colltort</option>';
+            Espcie_options_str  += '<option value="Colom roquer">Colom roquer</option>';
+            Espcie_options_str  += '<option value="Colom roquer domèstic">Colom roquer domèstic</option>';
+            Espcie_options_str  += '<option value="Corb">Corb</option>';
+            Espcie_options_str  += '<option value="Corb marí gros">Corb marí gros</option>';
+            Espcie_options_str  += '<option value="Cornella negra">Cornella negra</option>';
+            Espcie_options_str  += '<option value="Corriol camanegre">Corriol camanegre</option>';
+            Espcie_options_str  += '<option value="Corriol gros">Corriol gros</option>';
+            Espcie_options_str  += '<option value="Corriol petit">Corriol petit</option>';
+            Espcie_options_str  += '<option value="Cotoliu">Cotoliu</option>';
+            Espcie_options_str  += '<option value="Cotxa blava">Cotxa blava</option>';
+            Espcie_options_str  += '<option value="Cotxa cua-roja">Cotxa cua-roja</option>';
+            Espcie_options_str  += '<option value="Cotxa fumada">Cotxa fumada</option>';
+            Espcie_options_str  += '<option value="Cruixidell">Cruixidell</option>';
+            Espcie_options_str  += '<option value="Cucut">Cucut</option>';
+            Espcie_options_str  += '<option value="Cuereta blanca vulgar">Cuereta blanca vulgar</option>';
+            Espcie_options_str  += '<option value="Cuereta groga">Cuereta groga</option>';
+            Espcie_options_str  += '<option value="Cuereta groga alemanya">Cuereta groga alemanya</option>';
+            Espcie_options_str  += '<option value="Cuereta groga anglesa">Cuereta groga anglesa</option>';
+            Espcie_options_str  += '<option value="Cuereta groga balcànica">Cuereta groga balcànica</option>';
+            Espcie_options_str  += '<option value="Cuereta groga escandinava">Cuereta groga escandinava</option>';
+            Espcie_options_str  += '<option value="Cuereta groga ibèrica">Cuereta groga ibèrica</option>';
+            Espcie_options_str  += '<option value="Cuereta groga italiana">Cuereta groga italiana</option>';
+            Espcie_options_str  += '<option value="Cuereta torrentera">Cuereta torrentera</option>';
+            Espcie_options_str  += '<option value="Curroc">Curroc</option>';
+            Espcie_options_str  += '<option value="Còlit gris">Còlit gris</option>';
+            Espcie_options_str  += '<option value="Còlit ros occidental">Còlit ros occidental</option>';
+            Espcie_options_str  += '<option value="Daurada grossa">Daurada grossa</option>';
+            Espcie_options_str  += '<option value="Durbec">Durbec</option>';
+            Espcie_options_str  += '<option value="Escorxador">Escorxador</option>';
+            Espcie_options_str  += '<option value="Esmerla">Esmerla</option>';
+            Espcie_options_str  += '<option value="Esparver cendrós">Esparver cendrós</option>';
+            Espcie_options_str  += '<option value="Esparver d&apos;espatlles negres">Esparver d&apos;espatlles negres</option>';
+            Espcie_options_str  += '<option value="Esparver vulgar">Esparver vulgar</option>';
+            Espcie_options_str  += '<option value="Esplugabous">Esplugabous</option>';
+            Espcie_options_str  += '<option value="Estornell negre">Estornell negre</option>';
+            Espcie_options_str  += '<option value="Estornell negre / vulgar">Estornell negre / vulgar</option>';
+            Espcie_options_str  += '<option value="Estornell vulgar">Estornell vulgar</option>';
+            Espcie_options_str  += '<option value="Falciot negre">Falciot negre</option>';
+            Espcie_options_str  += '<option value="Falcó cama-roig">Falcó cama-roig</option>';
+            Espcie_options_str  += '<option value="Falcó mostatxut">Falcó mostatxut</option>';
+            Espcie_options_str  += '<option value="Falcó pelegrí">Falcó pelegrí</option>';
+            Espcie_options_str  += '<option value="Flamenc">Flamenc</option>';
+            Espcie_options_str  += '<option value="Fredeluga">Fredeluga</option>';
+            Espcie_options_str  += '<option value="Gafarró">Gafarró</option>';
+            Espcie_options_str  += '<option value="Gaig">Gaig</option>';
+            Espcie_options_str  += '<option value="Gaig blau">Gaig blau</option>';
+            Espcie_options_str  += '<option value="Gamba roja pintada">Gamba roja pintada</option>';
+            Espcie_options_str  += '<option value="Gamba roja vulgar">Gamba roja vulgar</option>';
+            Espcie_options_str  += '<option value="Gamba verda">Gamba verda</option>';
+            Espcie_options_str  += '<option value="Garsa">Garsa</option>';
+            Espcie_options_str  += '<option value="Gavina cendrosa">Gavina cendrosa</option>';
+            Espcie_options_str  += '<option value="Gavina vulgar">Gavina vulgar</option>';
+            Espcie_options_str  += '<option value="Gavià argentat">Gavià argentat</option>';
+            Espcie_options_str  += '<option value="Gavià fosc">Gavià fosc</option>';
+            Espcie_options_str  += '<option value="Gralla">Gralla</option>';
+            Espcie_options_str  += '<option value="Grasset de muntanya">Grasset de muntanya</option>';
+            Espcie_options_str  += '<option value="Gratapalles">Gratapalles</option>';
+            Espcie_options_str  += '<option value="Griva">Griva</option>';
+            Espcie_options_str  += '<option value="Griva cerdana">Griva cerdana</option>';
+            Espcie_options_str  += '<option value="Grua">Grua</option>';
+            Espcie_options_str  += '<option value="Guatlla">Guatlla</option>';
+            Espcie_options_str  += '<option value="Hippolais no identificat">Hippolais no identificat</option>';
+            Espcie_options_str  += '<option value="Hortolà">Hortolà</option>';
+            Espcie_options_str  += '<option value="Lluer">Lluer</option>';
+            Espcie_options_str  += '<option value="Mallerenga blava">Mallerenga blava</option>';
+            Espcie_options_str  += '<option value="Mallerenga carbonera">Mallerenga carbonera</option>';
+            Espcie_options_str  += '<option value="Mallerenga cuallarga">Mallerenga cuallarga</option>';
+            Espcie_options_str  += '<option value="Martinet blanc">Martinet blanc</option>';
+            Espcie_options_str  += '<option value="Martinet de nit">Martinet de nit</option>';
+            Espcie_options_str  += '<option value="Martinet ros">Martinet ros</option>';
+            Espcie_options_str  += '<option value="Mastegatatxes">Mastegatatxes</option>';
+            Espcie_options_str  += '<option value="Merla">Merla</option>';
+            Espcie_options_str  += '<option value="Milà negre">Milà negre</option>';
+            Espcie_options_str  += '<option value="Milà reial">Milà reial</option>';
+            Espcie_options_str  += '<option value="Morell de cap roig">Morell de cap roig</option>';
+            Espcie_options_str  += '<option value="Morell de plomall">Morell de plomall</option>';
+            Espcie_options_str  += '<option value="Mosquiter comú">Mosquiter comú</option>';
+            Espcie_options_str  += '<option value="Mosquiter de passa">Mosquiter de passa</option>';
+            Espcie_options_str  += '<option value="Mosquiter ibèric">Mosquiter ibèric</option>';
+            Espcie_options_str  += '<option value="Mosquiter pàl·lid">Mosquiter pàl·lid</option>';
+            Espcie_options_str  += '<option value="Mussol banyut">Mussol banyut</option>';
+            Espcie_options_str  += '<option value="Mussol comú">Mussol comú</option>';
+            Espcie_options_str  += '<option value="Mussol emigrant">Mussol emigrant</option>';
+            Espcie_options_str  += '<option value="Oreneta cua-rogenca">Oreneta cua-rogenca</option>';
+            Espcie_options_str  += '<option value="Oreneta cuablanca">Oreneta cuablanca</option>';
+            Espcie_options_str  += '<option value="Oreneta de ribera">Oreneta de ribera</option>';
+            Espcie_options_str  += '<option value="Oreneta vulgar">Oreneta vulgar</option>';
+            Espcie_options_str  += '<option value="Oriol">Oriol</option>';
+            Espcie_options_str  += '<option value="Papamosques gris">Papamosques gris</option>';
+            Espcie_options_str  += '<option value="Pardal comú">Pardal comú</option>';
+            Espcie_options_str  += '<option value="Pardal de bardissa">Pardal de bardissa</option>';
+            Espcie_options_str  += '<option value="Pardal roquer">Pardal roquer</option>';
+            Espcie_options_str  += '<option value="Pardal xarrec">Pardal xarrec</option>';
+            Espcie_options_str  += '<option value="Passerell comú">Passerell comú</option>';
+            Espcie_options_str  += '<option value="Perdiu roja">Perdiu roja</option>';
+            Espcie_options_str  += '<option value="Phylloscopus no identificat">Phylloscopus no identificat</option>';
+            Espcie_options_str  += '<option value="Pica-soques blau">Pica-soques blau</option>';
+            Espcie_options_str  += '<option value="Picot garser gros">Picot garser gros</option>';
+            Espcie_options_str  += '<option value="Picot garser petit">Picot garser petit</option>';
+            Espcie_options_str  += '<option value="Picot verd ibèric">Picot verd ibèric</option>';
+            Espcie_options_str  += '<option value="Pinsà comú">Pinsà comú</option>';
+            Espcie_options_str  += '<option value="Pinsà mec">Pinsà mec</option>';
+            Espcie_options_str  += '<option value="Pit-roig">Pit-roig</option>';
+            Espcie_options_str  += '<option value="Piula dels arbres">Piula dels arbres</option>';
+            Espcie_options_str  += '<option value="Piula gola-roja">Piula gola-roja</option>';
+            Espcie_options_str  += '<option value="Polla d&apos;aigua">Polla d&apos;aigua</option>';
+            Espcie_options_str  += '<option value="Puput">Puput</option>';
+            Espcie_options_str  += '<option value="Rascletó">Rascletó</option>';
+            Espcie_options_str  += '<option value="Rascló">Rascló</option>';
+            Espcie_options_str  += '<option value="Raspinell comú">Raspinell comú</option>';
+            Espcie_options_str  += '<option value="Repicatalons">Repicatalons</option>';
+            Espcie_options_str  += '<option value="Repicatalons de Lapònia">Repicatalons de Lapònia</option>';
+            Espcie_options_str  += '<option value="Repicatalons petit">Repicatalons petit</option>';
+            Espcie_options_str  += '<option value="Roquerol">Roquerol</option>';
+            Espcie_options_str  += '<option value="Rossinyol">Rossinyol</option>';
+            Espcie_options_str  += '<option value="Rossinyol bord">Rossinyol bord</option>';
+            Espcie_options_str  += '<option value="Sit negre">Sit negre</option>';
+            Espcie_options_str  += '<option value="Tallareta cuallarga">Tallareta cuallarga</option>';
+            Espcie_options_str  += '<option value="Tallareta vulgar">Tallareta vulgar</option>';
+            Espcie_options_str  += '<option value="Tallarol capnegre">Tallarol capnegre</option>';
+            Espcie_options_str  += '<option value="Tallarol de casquet">Tallarol de casquet</option>';
+            Espcie_options_str  += '<option value="Tallarol de garriga">Tallarol de garriga</option>';
+            Espcie_options_str  += '<option value="Tallarol gros">Tallarol gros</option>';
+            Espcie_options_str  += '<option value="Tallarol o tallareta no identificat">Tallarol o tallareta no identificat</option>';
+            Espcie_options_str  += '<option value="Tallarol trencamates">Tallarol trencamates</option>';
+            Espcie_options_str  += '<option value="Terrerola vulgar">Terrerola vulgar</option>';
+            Espcie_options_str  += '<option value="Territ becllarg">Territ becllarg</option>';
+            Espcie_options_str  += '<option value="Territ de Temminck">Territ de Temminck</option>';
+            Espcie_options_str  += '<option value="Titella">Titella</option>';
+            Espcie_options_str  += '<option value="Tord ala-roig">Tord ala-roig</option>';
+            Espcie_options_str  += '<option value="Tord comú">Tord comú</option>';
+            Espcie_options_str  += '<option value="Torlit">Torlit</option>';
+            Espcie_options_str  += '<option value="Trist">Trist</option>';
+            Espcie_options_str  += '<option value="Trobat">Trobat</option>';
+            Espcie_options_str  += '<option value="Tudó">Tudó</option>';
+            Espcie_options_str  += '<option value="Tórtora">Tórtora</option>';
+            Espcie_options_str  += '<option value="Tórtora turca">Tórtora turca</option>';
+            Espcie_options_str  += '<option value="Valona">Valona</option>';
+            Espcie_options_str  += '<option value="Verderola">Verderola</option>';
+            Espcie_options_str  += '<option value="Verdum">Verdum</option>';
+            Espcie_options_str  += '<option value="Voltor comú">Voltor comú</option>';
+            Espcie_options_str  += '<option value="Xarrasclet">Xarrasclet</option>';
+            Espcie_options_str  += '<option value="Xarxet comú">Xarxet comú</option>';
+            Espcie_options_str  += '<option value="Xibec">Xibec</option>';
+            Espcie_options_str  += '<option value="Xivita">Xivita</option>';
+            Espcie_options_str  += '<option value="Xivitona">Xivitona</option>';
+            Espcie_options_str  += '<option value="Xixella">Xixella</option>';
+            Espcie_options_str  += '<option value="Xoriguer comú">Xoriguer comú</option>';
+            Espcie_options_str  += '<option value="Xot">Xot</option>';
+            Espcie_options_str  += '<option value="híbrid d&apos;Oreneta vulgar i cuablanca">híbrid d&apos;Oreneta vulgar i cuablanca</option>';
+            Espcie_options_str  += '<option value="Àguila calçada">Àguila calçada</option>';
+            Espcie_options_str  += '<option value="Àguila marcenca">Àguila marcenca</option>';
+            Espcie_options_str  += '<option value="Ànec collverd">Ànec collverd</option>';
+            Espcie_options_str  += '<option value="Ànec cullerot">Ànec cullerot</option>';
+            Espcie_options_str  += '<option value="Ànec mandarí">Ànec mandarí</option>';
+            Espcie_options_str  += '<option value="Ànec xiulador">Ànec xiulador</option>';
+            Espcie_options_str  += '<option value="Òliba">Òliba</option>';
+            sel_Espcie.innerHTML = Espcie_options_str;
+            div_Espcie.appendChild(sel_Espcie);
+            var lab_Espcie = document.createElement('div');
+            lab_Espcie.innerHTML = 'Espècie';
+            lab_Espcie.className = 'filterlabel';
+            div_Espcie.appendChild(lab_Espcie);
+            var reset_Espcie = document.createElement('div');
+            reset_Espcie.innerHTML = 'Neteja filtre';
+            reset_Espcie.className = 'filterlabel';
+            reset_Espcie.onclick = function() {
+                var options = document.getElementById("sel_Espcie").options;
+                for (var i=0; i < options.length; i++) {
+                    options[i].selected = false;
+                }
+                filterFunc();
+            };
+            div_Espcie.appendChild(reset_Espcie);
+            document.getElementById("menu").appendChild(
+                document.createElement("div"));
+            var div_Tipusdedada = document.createElement('div');
+            div_Tipusdedada.id = "div_Tipusdedada";
+            div_Tipusdedada.className= "filterselect";
+            document.getElementById("menu").appendChild(div_Tipusdedada);
+            sel_Tipusdedada = document.createElement('select');
+            sel_Tipusdedada.multiple = true;
+            sel_Tipusdedada.size = 3;
+            sel_Tipusdedada.id = "sel_Tipusdedada";
+            var Tipusdedada_options_str = "<option value='' unselected></option>";
+            sel_Tipusdedada.onchange = function(){filterFunc()};
+			Tipusdedada_options_str  += '<option value="Precisa">Precisa</option>';
+            Tipusdedada_options_str  += '<option value="Aproximada">Aproximada</option>';                       
+			Tipusdedada_options_str  += '<option value="Hotspot">Hotspot</option>';
+            sel_Tipusdedada.innerHTML = Tipusdedada_options_str;
+            div_Tipusdedada.appendChild(sel_Tipusdedada);
+            var lab_Tipusdedada = document.createElement('div');
+            lab_Tipusdedada.innerHTML = 'Tipus de dada';
+            lab_Tipusdedada.className = 'filterlabel';
+            div_Tipusdedada.appendChild(lab_Tipusdedada);
+            var reset_Tipusdedada = document.createElement('div');
+            reset_Tipusdedada.innerHTML = 'Neteja filtre';
+            reset_Tipusdedada.className = 'filterlabel';
+            reset_Tipusdedada.onclick = function() {
+                var options = document.getElementById("sel_Tipusdedada").options;
+                for (var i=0; i < options.length; i++) {
+                    options[i].selected = false;
+                }
+                filterFunc();
+            };
+            div_Tipusdedada.appendChild(reset_Tipusdedada);
+        </script>        
+    </body>
+</html>
